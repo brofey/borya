@@ -1,10 +1,11 @@
 // 2D-физика шаров на плоскости xz: трение, соударения, борта, лузы.
-import { R, HX, HZ, POCKETS, SEGMENTS } from './table.js?v=3';
+import { R, HX, HZ, POCKETS, SEGMENTS } from './table.js?v=4';
 
-const E_BALL = 0.94;
+const E_BALL = 0.96;
+const ITER = 12;     // проходов по столкновениям за шаг — импульс проходит через всю пирамиду
 const E_CUSHION = 0.78;
 const ROLL_DECEL = 6.5;
-const DRAG = 0.12;
+const DRAG = 0.03;   // было 0.12 — сильно тормозило быстрые шары
 const STOP = 0.06;
 
 export class Physics {
@@ -44,7 +45,8 @@ export class Physics {
         const ns = Math.max(0, sp - (ROLL_DECEL + DRAG * sp) * h);
         if (ns < STOP) { b.vx = 0; b.vz = 0; } else { b.vx *= ns / sp; b.vz *= ns / sp; }
       }
-      // шар-шар
+      // шар-шар: сначала разводим пересечения
+      const contacts = [];
       for (let i = 0; i < act.length; i++) {
         const a = act[i];
         if (!a.active) continue;
@@ -59,13 +61,33 @@ export class Physics {
           const overlap = 2 * R - d;
           a.x -= nx * overlap / 2; a.z -= nz * overlap / 2;
           b.x += nx * overlap / 2; b.z += nz * overlap / 2;
-          const rel = (a.vx - b.vx) * nx + (a.vz - b.vz) * nz;
-          if (rel <= 0) continue;
-          const jmp = (rel * (1 + E_BALL)) / 2;
-          a.vx -= jmp * nx; a.vz -= jmp * nz;
-          b.vx += jmp * nx; b.vz += jmp * nz;
-          events.push({ type: 'ball', a, b, speed: rel, nx, nz });
+          contacts.push({ a, b, nx, nz });
         }
+      }
+      // импульсы: накапливаем по каждому контакту, пока у всех не будет нужной
+      // скорости отскока (−e·скорость сближения). Так удар расходится по всей
+      // пирамиде одновременно, а не улетает в один задний шар
+      for (const c of contacts) {
+        c.rel0 = Math.max(0, (c.a.vx - c.b.vx) * c.nx + (c.a.vz - c.b.vz) * c.nz);
+        c.acc = 0;
+      }
+      for (let it = 0; it < ITER && contacts.length; it++) {
+        let worst = 0;
+        for (const c of contacts) {
+          const rel = (c.a.vx - c.b.vx) * c.nx + (c.a.vz - c.b.vz) * c.nz;
+          const lambda = (rel + E_BALL * c.rel0) / 2;
+          const acc = Math.max(0, c.acc + lambda);
+          const jmp = acc - c.acc;
+          c.acc = acc;
+          if (jmp === 0) continue;
+          worst = Math.max(worst, Math.abs(jmp));
+          c.a.vx -= jmp * c.nx; c.a.vz -= jmp * c.nz;
+          c.b.vx += jmp * c.nx; c.b.vz += jmp * c.nz;
+        }
+        if (worst < 1e-3) break;
+      }
+      for (const c of contacts) {
+        if (c.rel0 > 0.05) events.push({ type: 'ball', a: c.a, b: c.b, speed: c.rel0, nx: c.nx, nz: c.nz });
       }
       // борта
       for (const b of act) {

@@ -264,7 +264,6 @@ export function rackPositions() {
   const order = [];
   const res = [];
   const fx = HX / 2;
-  const gap = 0.01;
   for (let i = 0; i < 5; i++) for (let j = 0; j <= i; j++) order.push([i, j]);
   const corner1 = stripes.pop(), corner2 = solids.pop();
   const rest = shuffle([...solids, ...stripes]);
@@ -275,7 +274,9 @@ export function rackPositions() {
     else if (i === 4 && j === 0) num = corner1;
     else if (i === 4 && j === 4) num = corner2;
     else num = rest.pop();
-    res.push({ num, x: fx + i * (Math.sqrt(3) * R + gap), z: (j - i / 2) * (2 * R + gap) });
+    // небольшой случайный разброс — каждый разбой немного другой
+    const jit = () => (Math.random() - 0.5) * 0.04;
+    res.push({ num, x: fx + i * (Math.sqrt(3) * R + 0.012) + jit(), z: (j - i / 2) * (2 * R + 0.012) + jit() });
   }
   return res;
 }

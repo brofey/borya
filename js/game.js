@@ -1,11 +1,11 @@
 // Боря-биток: американский пул (восьмёрка), где биток — голова Бори.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createHead } from './head.js?v=3';
-import { FX } from './fx.js?v=3';
-import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=3';
-import { Physics } from './physics.js?v=3';
-import * as sfx from './audio.js?v=3';
+import { createHead } from './head.js?v=4';
+import { FX } from './fx.js?v=4';
+import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=4';
+import { Physics } from './physics.js?v=4';
+import * as sfx from './audio.js?v=4';
 
 const $ = (id) => document.getElementById(id);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -233,6 +233,18 @@ function respawnBorya() {
 let popT = 1;
 
 // ---------- удар ----------
+// Сила → скорость: до 70% как раньше (точные удары), выше — разгон до разбойной скорости
+const MAX_SPEED = 110;
+const S70 = 3 + 52 * Math.pow(0.7, 1.15);
+function speedOf(p) {
+  if (p <= 0.7) return 3 + 52 * Math.pow(p, 1.15);
+  return S70 + (MAX_SPEED - S70) * Math.pow((p - 0.7) / 0.3, 1.5);
+}
+function powerOf(speed) {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (speedOf(m) < speed) lo = m; else hi = m; }
+  return hi;
+}
 let strikeFrom = 0;
 function aimDir() { return new THREE.Vector3(Math.cos(G.aim), 0, Math.sin(G.aim)); }
 function cueGap() { return 0.35 + G.power * 4.5; }
@@ -252,7 +264,7 @@ function shoot() {
 function impact() {
   const d = aimDir();
   const p = G.power;
-  const speed = 3 + 52 * Math.pow(p, 1.15);
+  const speed = speedOf(p);
   borya.vx = d.x * speed;
   borya.vz = d.z * speed;
   Object.assign(shot, { firstHit: null, pocketed: [], scratch: false, ride: 0, maxV: speed, ownBefore: groupCleared(P()) });
@@ -429,7 +441,7 @@ function planFrom(cx, cz, pl) {
       if (!physics.clearPath(b.x, b.z, tx, tz, [b, borya])) continue;
       const score = (cos * cos) / (1 + d1 * 0.02 + d2 * 0.03);
       const vObj = Math.sqrt(2 * DECEL * (d2 + 2)) / (0.97 * cos);
-      const v0 = Math.min(55, Math.max(6, Math.sqrt(vObj * vObj + 2 * DECEL * d1) * 1.25));
+      const v0 = Math.min(70, Math.max(6, Math.sqrt(vObj * vObj + 2 * DECEL * d1) * 1.12));
       if (!best || score > best.score) best = { score, angle: Math.atan2(vz, vx), speed: v0 };
     }
   }
@@ -450,8 +462,8 @@ function aiPlan() {
     best = nb ? { angle: Math.atan2(nb.z - borya.z, nb.x - borya.x), speed: 22 } : { angle: Math.random() * 6.28, speed: 20 };
   }
   ai.target = best.angle + (Math.random() - 0.5) * 0.035;
-  ai.power = Math.pow(Math.max(0, (best.speed - 3) / 52), 1 / 1.15);
-  if (G.isBreak) { ai.target = Math.atan2(-borya.z, HX / 2 - borya.x) + (Math.random() - 0.5) * 0.02; ai.power = 0.92; }
+  ai.power = powerOf(best.speed);
+  if (G.isBreak) { ai.target = Math.atan2(-borya.z, HX / 2 - borya.x) + (Math.random() - 0.5) * 0.02; ai.power = 0.97; }
 }
 function aiPlace() {
   let bestPos = null, bestScore = -1;
