@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Боря-биток · превью</title>
+<style>
+  :root { --bg: #101317; --panel: rgba(16, 19, 23, 0.82); --text: #f1efe9; --muted: #9aa1a8; --accent: #ffd23a; --btn: #23292f; --btn-on: #ffd23a; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  canvas { display: block; touch-action: none; }
+  header { position: fixed; top: 0; left: 0; right: 0; padding: 14px 16px; pointer-events: none; }
+  h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: 0.2px; }
+  h1 span { color: var(--accent); }
+  .sub { margin-top: 4px; font-size: 12px; color: var(--muted); }
+  #state { margin-top: 8px; display: inline-block; font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--panel); border: 1px solid #333a41; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; background: linear-gradient(to top, rgba(10,12,15,0.9), rgba(10,12,15,0)); }
+  button { appearance: none; border: 1px solid #39414a; background: var(--btn); color: var(--text); font: 600 14px/1 system-ui, sans-serif; padding: 11px 14px; border-radius: 12px; cursor: pointer; transition: transform 0.08s, background 0.15s; }
+  button:hover { background: #2d353c; }
+  button:active { transform: scale(0.96); }
+  button.on { background: var(--btn-on); color: #1a1a1a; border-color: var(--btn-on); }
+  button.main { background: #e8332a; border-color: #e8332a; color: #fff; }
+  button.main.on { background: #ff5148; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Боря-<span>биток</span> · превью модели</h1>
+  <div class="sub">Крути камеру мышкой / пальцем, колесо — зум</div>
+  <div id="state">Покой</div>
+</header>
+<nav id="nav">
+  <button data-act="idle">😐 Покой</button>
+  <button data-act="aim">🎯 Прицел</button>
+  <button data-act="hit">💥 Удар</button>
+  <button data-act="roll">🌀 Качение</button>
+  <button data-act="dizzy">😵 Головокружение</button>
+  <button data-act="full" class="main">▶ Вся сцена</button>
+</nav>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { createHead } from './js/head.js';
+import { FX } from './js/fx.js';
+
+const R = 1;
+const HX = 9, HZ = 4.6;            // половина игрового поля
+const START = new THREE.Vector3(-4.5, R, 0);
+const AIM = new THREE.Vector3(1, 0, 0);
+
+// ---------- сцена ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#101317');
+scene.fog = new THREE.Fog('#101317', 30, 60);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 200);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.48;
+controls.minDistance = 3;
+controls.maxDistance = 30;
+
+function resetCamera() {
+  const portrait = innerWidth < innerHeight;
+  controls.target.copy(START).add(new THREE.Vector3(1.2, 0.2, 0));
+  camera.position.copy(controls.target).add(portrait ? new THREE.Vector3(1.5, 3.2, 12) : new THREE.Vector3(1.5, 2.6, 8.5));
+  controls.update();
+}
+
+scene.add(new THREE.HemisphereLight('#fff6e8', '#2a4a38', 1.1));
+const lamp = new THREE.SpotLight('#fff1d6', 520, 40, 0.8, 0.6, 2);
+lamp.position.set(0, 14, 2);
+lamp.target.position.set(0, 0, 0);
+lamp.castShadow = true;
+lamp.shadow.mapSize.set(2048, 2048);
+lamp.shadow.bias = -0.0005;
+lamp.shadow.radius = 4;
+scene.add(lamp, lamp.target);
+const fill = new THREE.DirectionalLight('#ffe9dc', 1.6);
+fill.position.set(3, 4, 12);
+scene.add(fill);
+
+// ---------- стол ----------
+function feltTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#17643e';
+  ctx.fillRect(0, 0, 256, 256);
+  const img = ctx.getImageData(0, 0, 256, 256);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 18;
+    img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n;
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(6, 3);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const table = new THREE.Group();
+scene.add(table);
+const felt = new THREE.Mesh(new THREE.PlaneGeometry(HX * 2 + 1.2, HZ * 2 + 1.2), new THREE.MeshStandardMaterial({ map: feltTexture(), roughness: 0.95 }));
+felt.rotation.x = -Math.PI / 2;
+felt.receiveShadow = true;
+table.add(felt);
+const woodMat = new THREE.MeshStandardMaterial({ color: '#5a2f1a', roughness: 0.45, metalness: 0.05 });
+const cushMat = new THREE.MeshStandardMaterial({ color: '#196a41', roughness: 0.9 });
+const W = 1.3;
+for (const [x, z, w, d] of [[0, -HZ - W / 2 - 0.3, HX * 2 + W * 2 + 0.6, W], [0, HZ + W / 2 + 0.3, HX * 2 + W * 2 + 0.6, W], [-HX - W / 2 - 0.3, 0, W, HZ * 2 + 0.6], [HX + W / 2 + 0.3, 0, W, HZ * 2 + 0.6]]) {
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, d), woodMat);
+  rail.position.set(x, 0.55, z);
+  rail.castShadow = rail.receiveShadow = true;
+  table.add(rail);
+}
+for (const [x, z, w, d] of [[0, -HZ - 0.15, HX * 2, 0.3], [0, HZ + 0.15, HX * 2, 0.3], [-HX - 0.15, 0, 0.3, HZ * 2], [HX + 0.15, 0, 0.3, HZ * 2]]) {
+  const c = new THREE.Mesh(new THREE.BoxGeometry(w, 0.8, d), cushMat);
+  c.position.set(x, 0.4, z);
+  c.receiveShadow = true;
+  table.add(c);
+}
+const pocketMat = new THREE.MeshBasicMaterial({ color: '#050505' });
+for (const [x, z] of [[-HX, -HZ], [0, -HZ - 0.25], [HX, -HZ], [-HX, HZ], [0, HZ + 0.25], [HX, HZ]]) {
+  const p = new THREE.Mesh(new THREE.CircleGeometry(1.2, 40), pocketMat);
+  p.rotation.x = -Math.PI / 2;
+  p.position.set(x, 0.015, z);
+  table.add(p);
+}
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: '#15110e', roughness: 1 }));
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -6;
+scene.add(floor);
+
+// пара обычных шаров для масштаба
+function ballTexture(num, color, striped) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = striped ? '#f4f1e8' : color;
+  ctx.fillRect(0, 0, 512, 256);
+  if (striped) { ctx.fillStyle = color; ctx.fillRect(0, 70, 512, 116); }
+  for (const cx of [128, 384]) {
+    ctx.fillStyle = '#f4f1e8';
+    ctx.beginPath(); ctx.ellipse(cx, 128, 44, 50, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.font = 'bold 56px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(num), cx, 132);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+for (const [num, col, st, x, z, ry] of [[8, '#111111', false, 3.5, -3.2, 2.2], [3, '#d8241f', false, 6.0, -2.4, 0.6], [11, '#a8261d', true, 0.8, -3.3, 4]]) {
+  const b = new THREE.Mesh(new THREE.SphereGeometry(R, 48, 32), new THREE.MeshPhysicalMaterial({ map: ballTexture(num, col, st), roughness: 0.15, clearcoat: 1 }));
+  b.position.set(x, R, z);
+  b.rotation.set(0.3, ry, 0.2);
+  b.castShadow = true;
+  table.add(b);
+}
+
+// ---------- кий ----------
+function createCue() {
+  const g = new THREE.Group();
+  const piece = (rTop, rBot, len, x, mat) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, len, 24), mat);
+    m.rotation.z = -Math.PI / 2;  // ось +y → +x
+    m.position.x = x + len / 2;
+    m.castShadow = true;
+    g.add(m);
+    return m;
+  };
+  const mat = (color, rough = 0.4) => new THREE.MeshStandardMaterial({ color, roughness: rough, transparent: true });
+  piece(0.075, 0.07, 0.07, 0, mat('#3b7bd8', 0.9));
+  piece(0.078, 0.075, 0.3, 0.07, mat('#f3efe4'));
+  piece(0.12, 0.078, 7.0, 0.37, mat('#e2c28c', 0.35));
+  piece(0.135, 0.12, 0.25, 7.37, mat('#1a1a1a'));
+  piece(0.16, 0.135, 2.2, 7.62, mat('#6b2a17', 0.3));
+  piece(0.175, 0.16, 1.6, 9.82, mat('#151515', 0.8));
+  piece(0.18, 0.175, 1.2, 11.42, mat('#6b2a17', 0.3));
+  piece(0.18, 0.18, 0.1, 12.62, mat('#111'));
+  g.rotation.order = 'YZX';
+  return g;
+}
+const cue = createCue();
+scene.add(cue);
+cue.visible = false;
+const cueTip = new THREE.Object3D();
+cue.add(cueTip);
+function setCueOpacity(o) { cue.traverse((m) => { if (m.material) m.material.opacity = o; }); }
+function placeCue(gap) {
+  cue.visible = true;
+  cue.position.copy(head.root.position).addScaledVector(AIM, -(R + gap));
+  cue.position.y = R + 0.08;
+  cue.rotation.set(0, Math.atan2(AIM.z, -AIM.x), 0.09);
+}
+
+// ---------- голова ----------
+const head = createHead({ radius: R });
+scene.add(head.root);
+const fx = new FX(scene);
+const vel = new THREE.Vector3();
+const stateEl = document.getElementById('state');
+
+function faceCameraNow() {
+  const d = camera.position.clone().sub(head.root.position).setY(0).normalize();
+  head.rightUp(d, 0.001);
+}
+function popIn() { head.root.scale.setScalar(0.01); popT = 0; }
+let popT = 1;
+
+// ---------- сценарий ----------
+let state = 'idle', t = 0, autoShoot = false, afterHit = 'skid', exprUntil = 0, exprBase = 'idle';
+const LABELS = { idle: 'Покой', aim: 'Прицел', windup: 'Замах', strike: 'Удар!', skid: 'Удар', rolling: 'Качение', rollLoop: 'Качение (цикл)', dizzy: 'Головокружение', back: 'Возврат' };
+
+function flash(name, dur) { head.setExpression(name); exprUntil = time + dur; }
+function base(name) { exprBase = name; if (time >= exprUntil) head.setExpression(name); }
+function go(s) {
+  state = s; t = 0;
+  stateEl.textContent = LABELS[s] || s;
+  head.setTremble(s === 'aim' || s === 'windup' ? 1 : 0);
+  if (s === 'idle') { base('idle'); cue.visible = false; }
+  if (s === 'aim') { base('aim'); setCueOpacity(1); }
+  if (s === 'rollLoop') { base('roll'); if (vel.length() < 1) vel.set(7, 0, 0); else vel.setLength(7); }
+  if (s === 'dizzy') {
+    vel.set(0, 0, 0);
+    base('dizzy');
+    const d = camera.position.clone().sub(head.root.position);
+    head.rightUp(d, 0.9);
+    head.wobbleKick(new THREE.Vector3(0, 0, 1), 0.3);
+    fx.dizzyStars(head.root, R, 3.3);
+  }
+}
+function resetToStart() {
+  vel.set(0, 0, 0);
+  fx.clear();
+  head.root.position.copy(START);
+  faceCameraNow();
+  popIn();
+}
+
+function impact() {
+  const p = head.root.position;
+  const contact = p.clone().addScaledVector(AIM, -R);
+  head.impulse(AIM, 1.1);
+  fx.ring(contact, AIM.clone().negate());
+  fx.starBurst(contact.clone().add(new THREE.Vector3(0, 0.4, 0)), 10, 1);
+  fx.text(p.clone().add(new THREE.Vector3(-0.4, 2.3, 0)), 'БАЦ!', { size: 1.4 });
+  flash('hit', afterHit === 'rolling' ? 0.45 : 0.7);
+  if (afterHit === 'rolling') { vel.copy(AIM).multiplyScalar(11); base('roll'); }
+  else { vel.copy(AIM).multiplyScalar(3.2); base('oof'); }
+  go(afterHit);
+}
+
+function cushions(p) {
+  let hit = null;
+  if (p.x > HX - R && vel.x > 0) { p.x = HX - R; vel.x *= -0.8; hit = new THREE.Vector3(-1, 0, 0); }
+  if (p.x < -HX + R && vel.x < 0) { p.x = -HX + R; vel.x *= -0.8; hit = new THREE.Vector3(1, 0, 0); }
+  if (p.z > HZ - R && vel.z > 0) { p.z = HZ - R; vel.z *= -0.8; hit = new THREE.Vector3(0, 0, -1); }
+  if (p.z < -HZ + R && vel.z < 0) { p.z = -HZ + R; vel.z *= -0.8; hit = new THREE.Vector3(0, 0, 1); }
+  if (hit) {
+    const sp = vel.length();
+    head.impulse(hit, Math.min(1, sp / 8));
+    fx.starBurst(p.clone().addScaledVector(hit, -R).add(new THREE.Vector3(0, 0.5, 0)), 6, 0.6);
+    fx.text(p.clone().add(new THREE.Vector3(0, 2.2, 0)), 'ОЙ!', { size: 1.0 });
+    flash('oof', 0.35);
+  }
+}
+
+const ease = (x) => 1 - Math.pow(1 - x, 3);
+let time = 0;
+
+function step(dt) {
+  t += dt;
+  const p = head.root.position;
+  if (time >= exprUntil && head.expression !== exprBase) head.setExpression(exprBase);
+
+  switch (state) {
+    case 'idle':
+      head.lookAt(camera.position);
+      break;
+    case 'aim': {
+      const gap = 0.35 + 0.9 * (0.5 + 0.5 * Math.sin(t * 2.6 - Math.PI / 2));
+      placeCue(gap);
+      head.lookAt(cueTip.getWorldPosition(new THREE.Vector3()));
+      if (autoShoot && t > 2.6) go('windup');
+      break;
+    }
+    case 'windup': {
+      const k = Math.min(1, t / 0.5);
+      placeCue(0.35 + 2.4 * ease(k));
+      head.lookAt(cueTip.getWorldPosition(new THREE.Vector3()));
+      if (k >= 1) go('strike');
+      break;
+    }
+    case 'strike': {
+      const k = Math.min(1, t / 0.07);
+      placeCue(2.75 * (1 - k) - 0.02);
+      if (k >= 1) impact();
+      break;
+    }
+    case 'skid': {
+      fadeCue(dt);
+      const sp = Math.max(0, vel.length() - 7 * dt);
+      vel.setLength(sp);
+      const d = vel.clone().multiplyScalar(dt);
+      p.add(d); head.roll(d);
+      head.lookAt(null);
+      if (sp === 0 && t > 1.1) go('back');
+      break;
+    }
+    case 'rolling': {
+      fadeCue(dt);
+      const sp = Math.max(0, vel.length() - 2.6 * dt);
+      vel.setLength(sp);
+      const d = vel.clone().multiplyScalar(dt);
+      p.add(d); head.roll(d);
+      cushions(p);
+      head.lookAt(null);
+      if (sp < 0.12) go('dizzy');
+      break;
+    }
+    case 'rollLoop': {
+      vel.setLength(7);
+      const d = vel.clone().multiplyScalar(dt);
+      p.add(d); head.roll(d);
+      cushions(p);
+      head.lookAt(null);
+      break;
+    }
+    case 'dizzy':
+      if (t > 3.5) go('back');
+      break;
+    case 'back': {
+      const to = START.clone().sub(p).setY(0);
+      const dist = to.length();
+      if (dist < 0.05) {
+        p.copy(START);
+        head.rightUp(camera.position.clone().sub(p), 0.6);
+        go(pending || 'idle');
+        pending = null;
+        break;
+      }
+      base('happy');
+      const d = to.setLength(Math.min(dist, 6 * dt));
+      p.add(d); head.roll(d);
+      head.lookAt(camera.position);
+      break;
+    }
+  }
+}
+let pending = null;
+function fadeCue(dt) {
+  if (!cue.visible) return;
+  cue.position.addScaledVector(AIM, dt * 1.5);
+  let o = 1;
+  cue.traverse((m) => { if (m.material) { m.material.opacity = Math.max(0, m.material.opacity - dt * 2.5); o = m.material.opacity; } });
+  if (o <= 0) cue.visible = false;
+}
+
+// ---------- кнопки ----------
+const nav = document.getElementById('nav');
+function mark(act) { nav.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.act === act)); }
+nav.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const act = b.dataset.act;
+  mark(act);
+  autoShoot = false;
+  cue.visible = false;
+  setCueOpacity(1);
+  if (act === 'idle') {
+    if (head.root.position.distanceTo(START) > 0.1) { vel.set(0, 0, 0); pending = 'idle'; go('back'); } else go('idle');
+  } else if (act === 'aim') {
+    resetToStart(); go('aim');
+  } else if (act === 'hit') {
+    resetToStart(); afterHit = 'skid'; autoShoot = true; go('aim'); t = 1.9;
+  } else if (act === 'roll') {
+    go('rollLoop');
+  } else if (act === 'dizzy') {
+    go('dizzy');
+  } else if (act === 'full') {
+    resetToStart(); resetCamera(); afterHit = 'rolling'; autoShoot = true; go('aim');
+  }
+});
+
+// ---------- цикл ----------
+const clock = new THREE.Clock();
+const lastTarget = new THREE.Vector3();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 1 / 30);
+  time += dt;
+  step(dt);
+
+  if (popT < 1) {
+    popT = Math.min(1, popT + dt / 0.5);
+    const s = popT === 1 ? 1 : 1 - Math.pow(2, -10 * popT) * Math.cos(popT * 12);
+    head.root.scale.setScalar(Math.max(0.01, s));
+  }
+  head.update(dt, time);
+  fx.update(dt);
+
+  // камера следует за головой
+  const want = head.root.position.clone().add(new THREE.Vector3(state === 'aim' || state === 'windup' ? 1.2 : 0, 0.2, 0));
+  const nt = controls.target.clone().lerp(want, 1 - Math.exp(-3 * dt));
+  camera.position.add(nt.clone().sub(controls.target));
+  controls.target.copy(nt);
+  controls.update();
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+resetCamera();
+resetToStart();
+popT = 1; head.root.scale.setScalar(1);
+mark('idle');
+go('idle');
+window.__demo = { go, head, camera, controls, click: (a) => nav.querySelector(`[data-act=${a}]`).click() };
+frame();
+</script>
+</body>
+</html>
