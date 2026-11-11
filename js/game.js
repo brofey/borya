@@ -1,12 +1,12 @@
 // Боря-биток: американский пул (восьмёрка), где биток — голова Бори.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createHead } from './head.js?v=6';
-import { FX } from './fx.js?v=6';
-import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=6';
-import { Physics } from './physics.js?v=6';
-import * as sfx from './audio.js?v=6';
-import * as music from './music.js?v=6';
+import { createHead } from './head.js?v=7';
+import { FX } from './fx.js?v=7';
+import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=7';
+import { Physics } from './physics.js?v=7';
+import * as sfx from './audio.js?v=7';
+import * as music from './music.js?v=7';
 
 const $ = (id) => document.getElementById(id);
 function unlock() { sfx.unlockAudio(); music.startMusic(); }

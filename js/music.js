@@ -1,7 +1,7 @@
 // Тапёр немого кино: синтезированное пианино + треск пластинки.
 // Все мелодии оригинальные. Режимы: theme (рэгтайм), tension (тремоло при натяжке кия),
 // chase (галоп, пока Боря катится), dizzy (пьяный вальс).
-import { getCtx } from './audio.js?v=6';
+import { getCtx } from './audio.js?v=7';
 
 let enabled = true;
 try { enabled = localStorage.getItem('borya-music') !== '0'; } catch (e) { /* нет хранилища */ }
@@ -18,35 +18,28 @@ const midi = (n) => {
   return 12 * (+m[3] + 1) + NAMES[m[1]] + (m[2] ? 1 : 0);
 };
 
+let wave = null, wobbleLfo = null;
 function piano(n, t, dur, vel, wobble = 0) {
   const m = typeof n === 'number' ? n : midi(n);
   const f = 440 * Math.pow(2, (m - 69) / 12);
   const g = ctx.createGain();
-  const decay = Math.max(0.3, 1.7 - (m - 36) * 0.022);
+  const decay = Math.max(0.3, 1.5 - (m - 36) * 0.02);
   const end = t + Math.min(decay, dur + 0.2);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(vel, t + 0.006);
-  g.gain.exponentialRampToValueAtTime(vel * 0.4, t + 0.09);
+  const v = vel * 0.42;   // форма волны нормирована — громче прежних треугольников
+  g.gain.exponentialRampToValueAtTime(v, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(v * 0.4, t + 0.09);
   g.gain.exponentialRampToValueAtTime(0.0001, end);
   g.connect(bus);
-  // «расстроенное» пианино: два слегка разъехавшихся треугольника + обертоны
-  for (const [type, mult, det, amp] of [['triangle', 1, -8, 0.5], ['triangle', 1, 8, 0.5], ['sine', 2, 3, 0.18], ['sine', 3, -4, 0.06]]) {
+  // «расстроенное» пианино: два слегка разъехавшихся голоса с готовым тембром (обертоны в форме волны)
+  for (const det of [-7, 7]) {
     const o = ctx.createOscillator();
-    o.type = type;
-    o.frequency.value = f * mult;
+    o.setPeriodicWave(wave);
+    o.frequency.value = f;
     o.detune.value = det;
-    if (wobble) {
-      const l = ctx.createOscillator();
-      l.frequency.value = 3.5;
-      const lg = ctx.createGain();
-      lg.gain.value = wobble;
-      l.connect(lg).connect(o.detune);
-      l.start(t); l.stop(end + 0.05);
-    }
-    const a = ctx.createGain();
-    a.gain.value = amp;
-    o.connect(a).connect(g);
-    o.start(t); o.stop(end + 0.05);
+    if (wobble) wobbleLfo[wobble > 30 ? 1 : 0].connect(o.detune);
+    o.connect(g);
+    o.start(t); o.stop(end + 0.03);
   }
 }
 
@@ -153,21 +146,23 @@ function makeCrackle() {
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < len; i++) {
-    d[i] = (Math.random() * 2 - 1) * 0.012;
-    if (Math.random() < 0.0004) {
-      const a = (Math.random() * 0.5 + 0.2) * (Math.random() < 0.5 ? -1 : 1);
-      for (let k = 0; k < 30 && i + k < len; k++) d[i + k] += a * Math.exp(-k / 4);
+    d[i] = (Math.random() * 2 - 1) * 0.004;
+    if (Math.random() < 0.00015) {
+      // мягкие редкие щелчки (раньше были резкие и громкие — звучали как хрип)
+      const a = (Math.random() * 0.08 + 0.03) * (Math.random() < 0.5 ? -1 : 1);
+      for (let k = 0; k < 60 && i + k < len; k++) d[i + k] += a * Math.sin((k / 60) * Math.PI) * Math.exp(-k / 25);
     }
   }
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.loop = true;
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 900;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 2500;
+  bp.Q.value = 0.7;
   const g = ctx.createGain();
-  g.gain.value = 0.5;
-  src.connect(hp).connect(g).connect(out);
+  g.gain.value = 0.35;
+  src.connect(bp).connect(g).connect(out);
   src.start();
   return src;
 }
@@ -176,7 +171,7 @@ function tick() {
   if (!ctx) return;
   if (!enabled) { nextTime = ctx.currentTime + 0.05; return; }
   if (nextTime < ctx.currentTime) nextTime = ctx.currentTime + 0.05;
-  while (nextTime < ctx.currentTime + 0.15) nextTime += schedule(nextTime);
+  while (nextTime < ctx.currentTime + 0.3) nextTime += schedule(nextTime);
 }
 
 function ensure() {
@@ -190,10 +185,31 @@ function ensure() {
   hp.type = 'highpass'; hp.frequency.value = 160;
   const lp = ctx.createBiquadFilter();
   lp.type = 'lowpass'; lp.frequency.value = 4200;
-  out.connect(hp).connect(lp).connect(ctx.destination);
+  // ограничитель на выходе — страховка от перегруза
+  const lim = ctx.createDynamicsCompressor();
+  lim.threshold.value = -8;
+  lim.knee.value = 6;
+  lim.ratio.value = 12;
+  lim.attack.value = 0.003;
+  lim.release.value = 0.15;
+  out.connect(hp).connect(lp).connect(lim).connect(ctx.destination);
   bus = ctx.createGain();
   bus.gain.value = 1;
   bus.connect(out);
+  // тембр пианино: основной тон + затухающие обертоны
+  const real = new Float32Array([0, 0, 0, 0, 0, 0, 0]);
+  const imag = new Float32Array([0, 1, 0.42, 0.18, 0.09, 0.05, 0.03]);
+  wave = ctx.createPeriodicWave(real, imag);
+  // общие модуляторы «плывущей» высоты для вальса
+  wobbleLfo = [25, 45].map((depth) => {
+    const l = ctx.createOscillator();
+    l.frequency.value = 3.5;
+    const lg = ctx.createGain();
+    lg.gain.value = depth;
+    l.connect(lg);
+    l.start();
+    return lg;
+  });
   crackle = makeCrackle();
   return true;
 }
@@ -202,7 +218,7 @@ function ensure() {
 export function startMusic() {
   if (!ensure() || timer) return;
   nextTime = ctx.currentTime + 0.1;
-  timer = setInterval(tick, 25);
+  timer = setInterval(tick, 40);
 }
 
 export function setMode(m, k = 0) {

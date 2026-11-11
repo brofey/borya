@@ -1,5 +1,5 @@
 // 2D-физика шаров на плоскости xz: трение, соударения, борта, лузы.
-import { R, HX, HZ, POCKETS, SEGMENTS } from './table.js?v=6';
+import { R, HX, HZ, POCKETS, SEGMENTS } from './table.js?v=7';
 
 const E_BALL = 0.96;
 const ITER = 12;     // проходов по столкновениям за шаг — импульс проходит через всю пирамиду
