@@ -94,7 +94,70 @@ function makeSkinTexture() {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
-  return t;
+  return { tex: t, canvas: c };
+}
+
+// Детерминированный ГПСЧ для синяков (чтобы восстанавливались одинаково)
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Рисует синяк на развёртке кожи. dir — нормаль в локальных координатах головы
+function paintBruise(canvas, dir, strength, seed) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const r01 = rng(seed);
+  const th = Math.acos(Math.max(-1, Math.min(1, dir.y)));
+  let ph = Math.atan2(dir.z, -dir.x);
+  if (ph < 0) ph += Math.PI * 2;
+  const cx = (ph / (Math.PI * 2)) * W, cy = (th / Math.PI) * H;
+  const pxPerRad = H / Math.PI;
+  const r = (0.075 + 0.085 * strength) * pxPerRad;
+  const sx = 1 / Math.max(0.2, Math.sin(th));
+  const a = 0.45 + 0.55 * strength;
+  const blobs = [];
+  for (let i = 0; i < 5; i++) blobs.push([(r01() - 0.5) * r * 0.8, (r01() - 0.5) * r * 0.8, r * (0.55 + r01() * 0.45)]);
+  const dots = [];
+  for (let i = 0; i < 10; i++) dots.push([(r01() - 0.5) * r * 1.6, (r01() - 0.5) * r * 1.6, 1 + r01() * 2.2]);
+  const rot = r01() * Math.PI;
+  for (const off of [-W, 0, W]) {
+    ctx.save();
+    ctx.translate(cx + off, cy);
+    ctx.scale(sx, 1);
+    ctx.rotate(rot);
+    // жёлто-зелёный ореол
+    let g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.6);
+    g.addColorStop(0, `rgba(150,150,70,${0.22 * a})`);
+    g.addColorStop(1, 'rgba(150,150,70,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2); ctx.fill();
+    // фиолетовые пятна
+    for (const [bx, by, br] of blobs) {
+      g = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+      g.addColorStop(0, `rgba(95,45,120,${0.5 * a})`);
+      g.addColorStop(0.6, `rgba(120,60,140,${0.3 * a})`);
+      g.addColorStop(1, 'rgba(130,70,140,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+    }
+    // тёмная середина
+    g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.5);
+    g.addColorStop(0, `rgba(55,20,70,${0.55 * a})`);
+    g.addColorStop(1, 'rgba(70,25,80,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2); ctx.fill();
+    // точки-кровоизлияния
+    ctx.fillStyle = `rgba(150,30,50,${0.4 * a})`;
+    for (const [dx, dy, dr] of dots) { ctx.beginPath(); ctx.arc(dx, dy, dr, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
 }
 
 // Полярная развёртка: верх канваса — центр зрачка, низ — край радужки
@@ -157,6 +220,7 @@ export const EXPRESSIONS = {
   roll:  { lid: 1.0,  squint: 0.0,  browY: 0.07, browWorry: 0.7,  browAngry: 0,   smile: -0.2, open: 0.7,  width: 0.8,  blush: 0.5, sweat: 0, spiral: 0 },
   oof:   { lid: 0.1,  squint: 0.9,  browY: -0.02, browWorry: 0.0, browAngry: 0.7, smile: -0.5, open: 0.45, width: 1.1,  blush: 0.8, sweat: 0, spiral: 0 },
   dizzy: { lid: 1.0,  squint: 0.0,  browY: 0.03, browWorry: 0.5,  browAngry: 0,   smile: 0.25, open: 0.22, width: 0.9,  blush: 0.4, sweat: 0, spiral: 1 },
+  scared:{ lid: 1.0,  squint: 0.0,  browY: 0.08, browWorry: 1.0,  browAngry: 0,   smile: -0.8, open: 1.0,  width: 0.75, blush: 0.0, sweat: 1, spiral: 0 },
   happy: { lid: 0.55, squint: 0.5,  browY: 0.04, browWorry: 0.0,  browAngry: 0,   smile: 1.0,  open: 0.25, width: 1.15, blush: 0.4, sweat: 0, spiral: 0 },
 };
 
@@ -175,7 +239,8 @@ export function createHead({ radius = 1 } = {}) {
   root.add(wobble); wobble.add(align); align.add(scaler); scaler.add(unalign); unalign.add(spin); spin.add(face);
   face.scale.setScalar(R);
 
-  const skinTex = makeSkinTexture();
+  const { tex: skinTex, canvas: skinCanvas } = makeSkinTexture();
+  const bruises = [];
   const skinMat = new THREE.MeshPhysicalMaterial({
     map: skinTex, roughness: 0.5, clearcoat: 0.35, clearcoatRoughness: 0.3, sheen: 0.3, sheenColor: new THREE.Color('#ffb4a0'),
   });
@@ -404,6 +469,30 @@ export function createHead({ radius = 1 } = {}) {
 
   function setTremble(v) { tremble = v; }
 
+  let faceTarget = null;
+  function setFaceTarget(dir) { faceTarget = dir ? dir.clone().normalize() : null; }
+
+  // Синяк в точке удара (мировые координаты). Возвращает запись для сохранения.
+  function addBruise(worldPoint, strength = 1, seed = (Math.random() * 1e9) | 0) {
+    root.updateMatrixWorld(true);
+    const d = face.worldToLocal(worldPoint.clone()).normalize();
+    const rec = { x: +d.x.toFixed(4), y: +d.y.toFixed(4), z: +d.z.toFixed(4), s: +Math.min(1, strength).toFixed(3), seed };
+    applyBruise(rec);
+    return rec;
+  }
+  function applyBruise(rec) {
+    paintBruise(skinCanvas, new THREE.Vector3(rec.x, rec.y, rec.z), rec.s, rec.seed);
+    bruises.push(rec);
+    skinTex.needsUpdate = true;
+  }
+  function healAll() {
+    const fresh = makeSkinTexture();
+    skinCanvas.getContext('2d').drawImage(fresh.canvas, 0, 0);
+    fresh.tex.dispose();
+    bruises.length = 0;
+    skinTex.needsUpdate = true;
+  }
+
   const easeOutBack = (t) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 
   function update(dt, time) {
@@ -416,6 +505,13 @@ export function createHead({ radius = 1 } = {}) {
     squash.s += squash.v * dt;
     const s = Math.max(-0.35, Math.min(0.45, squash.s));
     scaler.scale.set(1 - s, 1 + s * 0.55, 1 + s * 0.55);
+
+    // плавный поворот лица к цели (например, к игроку при прицеливании)
+    if (faceTarget && !righting.active) {
+      _m.lookAt(faceTarget, new THREE.Vector3(), UP);
+      _q.setFromRotationMatrix(_m);
+      spin.quaternion.slerp(_q, 1 - Math.exp(-5 * dt));
+    }
 
     // самовыравнивание
     if (righting.active) {
@@ -528,7 +624,8 @@ export function createHead({ radius = 1 } = {}) {
 
   return {
     root, spin, face, radius: R, meshes,
-    setExpression, lookAt, impulse, roll, rightUp, wobbleKick, setTremble, update,
+    setExpression, lookAt, impulse, roll, rightUp, wobbleKick, setTremble, setFaceTarget, update,
+    addBruise, applyBruise, healAll, bruises,
     get expression() { return exprName; },
   };
 }
