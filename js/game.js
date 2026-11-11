@@ -1,11 +1,11 @@
 // Боря-биток: американский пул (восьмёрка), где биток — голова Бори.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createHead } from './head.js?v=4';
-import { FX } from './fx.js?v=4';
-import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=4';
-import { Physics } from './physics.js?v=4';
-import * as sfx from './audio.js?v=4';
+import { createHead } from './head.js?v=5';
+import { FX } from './fx.js?v=5';
+import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=5';
+import { Physics } from './physics.js?v=5';
+import * as sfx from './audio.js?v=5';
 
 const $ = (id) => document.getElementById(id);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -367,12 +367,20 @@ function resolve() {
     }
   }
   let assigned = '';
-  if (!pl.group && !G.isBreak && !foul) {
-    const first = s.pocketed.find((n) => n !== 8);
-    if (first) {
-      pl.group = groupOf(first);
-      op.group = pl.group === 'solid' ? 'stripe' : 'solid';
-      assigned = `${pl.name}: ${pl.group === 'solid' ? 'сплошные' : 'полосатые'}. `;
+  if (!pl.group && !foul) {
+    let grp = null;
+    if (G.isBreak) {
+      // по-домашнему: на разбое группа — та, которой забито больше; поровну — стол открыт
+      const sol = s.pocketed.filter((n) => n < 8).length, str = s.pocketed.filter((n) => n > 8).length;
+      if (sol !== str) grp = sol > str ? 'solid' : 'stripe';
+    } else {
+      const first = s.pocketed.find((n) => n !== 8);
+      if (first) grp = groupOf(first);
+    }
+    if (grp) {
+      pl.group = grp;
+      op.group = grp === 'solid' ? 'stripe' : 'solid';
+      assigned = `${pl.name}: ${grp === 'solid' ? 'сплошные' : 'полосатые'}. `;
     }
   }
   const own = s.pocketed.filter((n) => n !== 8 && (pl.group ? groupOf(n) === pl.group : true));
@@ -864,5 +872,5 @@ setupBalls();
 head.root.position.set(borya.x, R, borya.z);
 head.rightUp(new THREE.Vector3(-1, 0, 0.6), 0.01);
 showMenu();
-window.__game = { tick, render: () => renderer.render(scene, camera), G, physics, head, newGame, borya, balls, shoot, setPower: (p) => { G.power = p; }, setAim: (a) => { G.aim = a; } };
+window.__game = { camera, tick, render: () => renderer.render(scene, camera), G, physics, head, newGame, borya, balls, shoot, setPower: (p) => { G.power = p; }, setAim: (a) => { G.aim = a; } };
 frame();

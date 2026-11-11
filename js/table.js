@@ -176,10 +176,36 @@ export function buildTable(scene) {
     const h = new THREE.Mesh(new THREE.CylinderGeometry(p.r, p.r * 0.85, 6, 40), holeMat);
     h.position.set(p.x, -2.98, p.z);
     g.add(h);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(p.r + 0.05, 0.16, 8, 40), chrome);
+    // ободок только на деревянной раме (за бортами): ищем самую длинную дугу снаружи
+    const rr = p.r + 0.05, N = 720;
+    const out = [];
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const x = p.x + Math.cos(a) * rr, z = p.z + Math.sin(a) * rr;
+      out.push(Math.abs(x) > HX + CW || Math.abs(z) > HZ + CW);
+    }
+    let bestStart = 0, bestLen = 0;
+    for (let i = 0; i < N; i++) {
+      if (!out[i] || out[(i - 1 + N) % N]) continue;
+      let len = 0;
+      while (len < N && out[(i + len) % N]) len++;
+      if (len > bestLen) { bestLen = len; bestStart = i; }
+    }
+    if (bestLen === 0 && out[0]) bestLen = N;
+    const a0 = (bestStart / N) * Math.PI * 2, arc = (bestLen / N) * Math.PI * 2;
+    const geo = new THREE.TorusGeometry(rr, 0.16, 8, 48, arc);
+    geo.rotateZ(a0);
+    const ring = new THREE.Mesh(geo, chrome);
     ring.rotation.x = Math.PI / 2;
     ring.position.set(p.x, RAIL_H + 0.1, p.z);
+    ring.castShadow = true;
     g.add(ring);
+    // заглушки на концах дуги
+    for (const a of [a0, a0 + arc]) {
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), chrome);
+      cap.position.set(p.x + Math.cos(a) * rr, RAIL_H + 0.1, p.z + Math.sin(a) * rr);
+      g.add(cap);
+    }
   }
 
   // корпус и ножки
