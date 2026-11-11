@@ -1,5 +1,5 @@
 // 2D-физика шаров на плоскости xz: трение, соударения, борта, лузы.
-import { R, HX, HZ, POCKETS, SEGMENTS } from './table.js';
+import { R, HX, HZ, POCKETS, SEGMENTS } from './table.js?v=3';
 
 const E_BALL = 0.94;
 const E_CUSHION = 0.78;

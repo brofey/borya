@@ -1,11 +1,11 @@
 // Боря-биток: американский пул (восьмёрка), где биток — голова Бори.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createHead } from './head.js';
-import { FX } from './fx.js';
-import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js';
-import { Physics } from './physics.js';
-import * as sfx from './audio.js';
+import { createHead } from './head.js?v=3';
+import { FX } from './fx.js?v=3';
+import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=3';
+import { Physics } from './physics.js?v=3';
+import * as sfx from './audio.js?v=3';
 
 const $ = (id) => document.getElementById(id);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -691,7 +691,7 @@ function showMenu() {
 
 // ---------- HUD ----------
 function updateBruiseCount() {
-  const n = head.bruises.length;
+  const n = (head.bruises || []).length;
   $('bruises').textContent = `🤕 ${n}`;
   $('healCount').textContent = n;
   $('heal').hidden = n === 0;

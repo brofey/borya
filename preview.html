@@ -20,12 +20,13 @@
   button.on { background: var(--btn-on); color: #1a1a1a; border-color: var(--btn-on); }
   button.main { background: #e8332a; border-color: #e8332a; color: #fff; }
   button.main.on { background: #ff5148; }
+  a.back { border: 1px solid #ffd23a; background: #ffd23a; color: #1a1a1a; font: 700 14px/1 system-ui, sans-serif; padding: 11px 14px; border-radius: 12px; text-decoration: none; }
 </style>
 </head>
 <body>
 <header>
   <h1>Боря-<span>биток</span> · превью модели</h1>
-  <div class="sub">Крути камеру мышкой / пальцем, колесо — зум · <a href="./" style="color:#ffd23a;pointer-events:auto">играть →</a></div>
+  <div class="sub">Крути камеру мышкой / пальцем, колесо — зум</div>
   <div id="state">Покой</div>
 </header>
 <nav id="nav">
@@ -35,6 +36,7 @@
   <button data-act="roll">🌀 Качение</button>
   <button data-act="dizzy">😵 Головокружение</button>
   <button data-act="full" class="main">▶ Вся сцена</button>
+  <a class="back" href="./">🎱 В игру</a>
 </nav>
 
 <script type="importmap">
@@ -47,8 +49,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createHead } from './js/head.js';
-import { FX } from './js/fx.js';
+import { createHead } from './js/head.js?v=3';
+import { FX } from './js/fx.js?v=3';
 
 const R = 1;
 const HX = 9, HZ = 4.6;            // половина игрового поля
