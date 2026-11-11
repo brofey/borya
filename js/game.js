@@ -1,13 +1,15 @@
 // Боря-биток: американский пул (восьмёрка), где биток — голова Бори.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createHead } from './head.js?v=5';
-import { FX } from './fx.js?v=5';
-import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=5';
-import { Physics } from './physics.js?v=5';
-import * as sfx from './audio.js?v=5';
+import { createHead } from './head.js?v=6';
+import { FX } from './fx.js?v=6';
+import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=6';
+import { Physics } from './physics.js?v=6';
+import * as sfx from './audio.js?v=6';
+import * as music from './music.js?v=6';
 
 const $ = (id) => document.getElementById(id);
+function unlock() { sfx.unlockAudio(); music.startMusic(); }
 const UP = new THREE.Vector3(0, 1, 0);
 const mobile = Math.min(innerWidth, innerHeight) < 700;
 
@@ -279,6 +281,7 @@ function impact() {
   fx.starBurst(contact.clone().add(new THREE.Vector3(0, 0.4, 0)), 4 + Math.round(p * 10), 0.6 + p);
   fx.text(pos.clone().add(new THREE.Vector3(0, 2.6, 0)), p > 0.55 ? 'БАЦ!' : p > 0.25 ? 'ТУК!' : 'тык', { size: 1.1 + p });
   sfx.bonk(p);
+  music.duck();
   flash('hit', 0.3 + p * 0.35);
   setBase('roll');
   chaseDir.copy(d);
@@ -590,7 +593,7 @@ function tablePoint(ev) {
 let drag = null;
 const canvas = renderer.domElement;
 canvas.addEventListener('pointerdown', (ev) => {
-  sfx.unlockAudio();
+  unlock();
   if (isCPU()) return;
   drag = { x: ev.clientX, y: ev.clientY, id: ev.pointerId };
   canvas.setPointerCapture(ev.pointerId);
@@ -629,7 +632,7 @@ canvas.addEventListener('wheel', (ev) => {
 const powerEl = $('power');
 let pdrag = null;
 powerEl.addEventListener('pointerdown', (ev) => {
-  sfx.unlockAudio();
+  unlock();
   if (G.state !== 'aim' || isCPU()) return;
   pdrag = { y: ev.clientY, id: ev.pointerId };
   powerEl.setPointerCapture(ev.pointerId);
@@ -652,7 +655,7 @@ powerEl.addEventListener('pointercancel', (ev) => { pdrag = null; G.charging = f
 // клавиатура
 const keys = {};
 addEventListener('keydown', (ev) => {
-  sfx.unlockAudio();
+  unlock();
   if (ev.repeat) return;
   keys[ev.code] = true;
   if (ev.code === 'Space' && G.state === 'aim' && !isCPU()) { G.charging = true; G.power = 0; spaceT = 0; }
@@ -682,6 +685,9 @@ $('cam').addEventListener('click', toggleCam);
 function syncSnd() { $('snd').textContent = sfx.isMuted() ? '🔇' : '🔊'; }
 $('snd').addEventListener('click', () => { sfx.setMuted(!sfx.isMuted()); syncSnd(); });
 syncSnd();
+function syncMus() { $('mus').style.opacity = music.isMusicOn() ? 1 : 0.45; }
+$('mus').addEventListener('click', () => { unlock(); music.setMusic(!music.isMusicOn()); syncMus(); });
+syncMus();
 $('menuBtn').addEventListener('click', showMenu);
 function confirmPlace() {
   if (G.state !== 'place') return;
@@ -689,8 +695,8 @@ function confirmPlace() {
   beginAim();
 }
 $('ready').addEventListener('click', confirmPlace);
-$('playCpu').addEventListener('click', () => { sfx.unlockAudio(); newGame('cpu'); });
-$('playPvp').addEventListener('click', () => { sfx.unlockAudio(); newGame('pvp'); });
+$('playCpu').addEventListener('click', () => { unlock(); newGame('cpu'); });
+$('playPvp').addEventListener('click', () => { unlock(); newGame('pvp'); });
 $('again').addEventListener('click', () => newGame(G.mode));
 $('toMenu').addEventListener('click', showMenu);
 $('heal').addEventListener('click', () => {
@@ -818,6 +824,12 @@ function tick(dt) {
   if (st !== 'aim' && st !== 'strike') guide.visible = false;
   if (st === 'aim' || st === 'strike') guide.visible = true;
   if (st === 'menu') head.lookAt(camera.position);
+
+  // тапёр подстраивается под происходящее
+  if (st === 'aim' || st === 'strike') music.setMode(G.power > 0.03 || st === 'strike' ? 'tension' : 'theme', G.power);
+  else if (st === 'moving') music.setMode('chase', Math.hypot(borya.vx, borya.vz) / 60);
+  else if (st === 'settle') music.setMode(exprBase === 'dizzy' ? 'dizzy' : 'theme');
+  else music.setMode('theme');
 
   updateFalling(dt);
   if (popT < 1) {

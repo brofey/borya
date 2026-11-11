@@ -142,3 +142,5 @@ export function fanfare() {
     o.start(t + i * 0.12); o.stop(t + i * 0.12 + 0.7);
   });
 }
+
+export function getCtx() { return ctx; }
