@@ -45,6 +45,13 @@
   #power .lbl { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.2; }
   #pval { font-weight: 800; color: var(--text); font-size: 13px; }
   #power.disabled { opacity: 0.35; pointer-events: none; }
+  #pbeer { color: var(--accent); font-weight: 700; }
+  #beer { position: relative; overflow: hidden; }
+  #beer.on { border-color: var(--accent); background: #3a2f12; }
+  #beerN { font-size: 12px; margin-left: 3px; color: var(--accent); }
+  #beerT { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--accent); transition: width 0.25s linear; }
+  #beer.shake { animation: shake 0.35s; }
+  @keyframes shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
 
   .bar { position: fixed; left: 16px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; gap: 8px; }
   #fine { position: fixed; right: 16px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; gap: 8px; }
@@ -64,6 +71,7 @@
   .box .help b { color: var(--text); font-weight: 600; }
   .box a { color: var(--accent); font-size: 13px; }
   #heal { background: transparent; color: var(--muted); font-size: 13px; padding: 8px; border-style: dashed; }
+  @media (max-width: 560px) { #fine { bottom: calc(66px + env(safe-area-inset-bottom)); } .bar button { padding: 10px 11px; } }
 </style>
 </head>
 <body>
@@ -75,7 +83,7 @@
   </div>
   <div class="mid"><div id="bruises" title="Синяков у Бори">🤕 0</div><div id="turn"></div></div>
   <div id="power" title="Тяни вниз и отпусти">
-    <div class="lbl">сила<br><span id="pval">0</span></div>
+    <div class="lbl">сила<br><span id="pval">0</span><br><span id="pbeer"></span></div>
     <div class="track"><div id="pfill"></div></div>
     <div class="lbl">тяни ↓<br>и отпусти</div>
   </div>
@@ -84,6 +92,7 @@
     <button id="cam" title="Камера (C)">🗺️ Сверху</button>
     <button id="snd" title="Звуки">🔊</button>
     <button id="mus" title="Музыка">🎵</button>
+    <button id="beer" title="Пиво: +15% к силе удара, до 4 бутылок, одна выветривается за 15 с">🍺<span id="beerN"></span><i id="beerT"></i></button>
   </div>
   <div id="fine"><button id="left" title="Точнее влево">◀</button><button id="right" title="Точнее вправо">▶</button></div>
   <div id="place" hidden><button id="ready" class="yellow">Готово</button></div>
@@ -125,6 +134,6 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="js/game.js?v=7"></script>
+<script type="module" src="js/game.js?v=8"></script>
 </body>
 </html>

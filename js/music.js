@@ -1,7 +1,7 @@
 // Тапёр немого кино: синтезированное пианино + треск пластинки.
 // Все мелодии оригинальные. Режимы: theme (рэгтайм), tension (тремоло при натяжке кия),
 // chase (галоп, пока Боря катится), dizzy (пьяный вальс).
-import { getCtx } from './audio.js?v=7';
+import { getCtx } from './audio.js?v=8';
 
 let enabled = true;
 try { enabled = localStorage.getItem('borya-music') !== '0'; } catch (e) { /* нет хранилища */ }

@@ -144,3 +144,20 @@ export function fanfare() {
 }
 
 export function getCtx() { return ctx; }
+
+// «буль-буль» — глоток пива
+export function gulp() {
+  if (!ok('gulp', 0.3)) return;
+  const t = ctx.currentTime;
+  for (let i = 0; i < 3; i++) {
+    const s = t + i * 0.16;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(260 - i * 30, s);
+    o.frequency.exponentialRampToValueAtTime(520 - i * 40, s + 0.09);
+    const g = ctx.createGain();
+    env(g, s, 0.01, 0.25, 0.1);
+    o.connect(g).connect(ctx.destination);
+    o.start(s); o.stop(s + 0.14);
+  }
+}

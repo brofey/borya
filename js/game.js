@@ -1,17 +1,22 @@
 // Боря-биток: американский пул (восьмёрка), где биток — голова Бори.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createHead } from './head.js?v=7';
-import { FX } from './fx.js?v=7';
-import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=7';
-import { Physics } from './physics.js?v=7';
-import * as sfx from './audio.js?v=7';
-import * as music from './music.js?v=7';
+import { createHead } from './head.js?v=8';
+import { FX } from './fx.js?v=8';
+import { R, HX, HZ, POCKETS, buildTable, createBallMesh, rackPositions, createCue, BALL_COLORS } from './table.js?v=8';
+import { Physics } from './physics.js?v=8';
+import * as sfx from './audio.js?v=8';
+import * as music from './music.js?v=8';
 
 const $ = (id) => document.getElementById(id);
 function unlock() { sfx.unlockAudio(); music.startMusic(); }
 const UP = new THREE.Vector3(0, 1, 0);
 const mobile = Math.min(innerWidth, innerHeight) < 700;
+
+// ---------- пиво ----------
+const BEER_MAX = 4, BEER_BONUS = 0.15, BEER_TIME = 15;
+const beer = { n: 0, t: 0, amt: 0 };   // бутылки, секунд до выветривания одной, плавная сила эффекта
+const beerMul = () => 1 + BEER_BONUS * beer.n;
 
 // ---------- рендер и сцена ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -266,7 +271,7 @@ function shoot() {
 function impact() {
   const d = aimDir();
   const p = G.power;
-  const speed = speedOf(p);
+  const speed = speedOf(p) * beerMul();
   borya.vx = d.x * speed;
   borya.vz = d.z * speed;
   Object.assign(shot, { firstHit: null, pocketed: [], scratch: false, ride: 0, maxV: speed, ownBefore: groupCleared(P()) });
@@ -473,7 +478,7 @@ function aiPlan() {
     best = nb ? { angle: Math.atan2(nb.z - borya.z, nb.x - borya.x), speed: 22 } : { angle: Math.random() * 6.28, speed: 20 };
   }
   ai.target = best.angle + (Math.random() - 0.5) * 0.035;
-  ai.power = powerOf(best.speed);
+  ai.power = powerOf(best.speed / beerMul());
   if (G.isBreak) { ai.target = Math.atan2(-borya.z, HX / 2 - borya.x) + (Math.random() - 0.5) * 0.02; ai.power = 0.97; }
 }
 function aiPlace() {
@@ -763,9 +768,53 @@ function toast(msg, dur = 1800) {
 
 // ---------- главный цикл ----------
 const clock = new THREE.Clock();
+// пьяный экран: рендерим сцену в текстуру и искажаем её шейдером (интерфейс — HTML, его не трогает)
+const drunkRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+const drunkMat = new THREE.ShaderMaterial({
+  uniforms: { tDiffuse: { value: drunkRT.texture }, uTime: { value: 0 }, uAmt: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime, uAmt; varying vec2 vUv;
+    void main() {
+      float a = uAmt;
+      vec2 uv = vUv;
+      uv.x += sin(uv.y * 7.0 + uTime * 1.6) * 0.011 * a + sin(uTime * 0.7) * 0.012 * a;
+      uv.y += cos(uv.x * 6.0 + uTime * 1.2) * 0.009 * a;
+      uv = (uv - 0.5) * (1.0 - 0.035 * a * (0.5 + 0.5 * sin(uTime * 1.1))) + 0.5;
+      vec2 ghost = vec2(sin(uTime * 0.8), cos(uTime * 0.55)) * 0.018 * a;
+      vec4 c = mix(texture2D(tDiffuse, uv), texture2D(tDiffuse, uv + ghost), 0.42 * min(a, 1.0));
+      float vig = smoothstep(0.95, 0.25, length(vUv - 0.5));
+      c.rgb *= mix(1.0, vig, 0.55 * min(a, 1.0));
+      gl_FragColor = c;
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  depthTest: false, depthWrite: false,
+});
+const drunkQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), drunkMat);
+drunkQuad.frustumCulled = false;
+const drunkScene = new THREE.Scene();
+drunkScene.add(drunkQuad);
+const drunkCam = new THREE.Camera();
+function sizeDrunk() {
+  const v = renderer.getDrawingBufferSize(new THREE.Vector2());
+  drunkRT.setSize(v.x, v.y);
+}
+sizeDrunk();
+
+function render() {
+  if (beer.amt < 0.01) { renderer.render(scene, camera); return; }
+  drunkMat.uniforms.uTime.value = time;
+  drunkMat.uniforms.uAmt.value = beer.amt;
+  renderer.setRenderTarget(drunkRT);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  renderer.render(drunkScene, drunkCam);
+}
+
 function frame() {
   tick(Math.min(clock.getDelta(), 1 / 30));
-  renderer.render(scene, camera);
+  render();
   requestAnimationFrame(frame);
 }
 function tick(dt) {
@@ -841,6 +890,51 @@ function tick(dt) {
   head.update(dt, time);
   fx.update(dt);
   updateCamera(dt);
+  updateBeer(dt);
+}
+
+function updateBeer(dt) {
+  if (beer.n > 0) {
+    beer.t -= dt;
+    if (beer.t <= 0) {
+      beer.n--;
+      beer.t = beer.n > 0 ? BEER_TIME : 0;
+      toast(beer.n ? `🍺 Отпускает… осталось бутылок: ${beer.n}` : '🍺 Протрезвел');
+    }
+  }
+  // плавно подтягиваем силу эффекта к числу бутылок (4 бутылки = 1.6 — штормит)
+  const target = beer.n * 0.4;
+  beer.amt += (target - beer.amt) * (1 - Math.exp(-1.5 * dt));
+  if (beer.amt > 0.01) {
+    const a = beer.amt;
+    camera.rotateZ(Math.sin(time * 0.75) * 0.035 * a);
+    camera.rotateX(Math.sin(time * 0.53 + 1) * 0.012 * a);
+    camera.rotateY(Math.cos(time * 0.61) * 0.015 * a);
+  }
+  updateBeerUI();
+}
+
+function drink() {
+  unlock();
+  if (beer.n >= BEER_MAX) {
+    toast('🍺 Хватит! Больше четырёх нельзя');
+    const b = $('beer');
+    b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+    return;
+  }
+  beer.n++;
+  beer.t = BEER_TIME;
+  sfx.gulp();
+  toast(`🍺 Бутылка №${beer.n}: сила удара +${Math.round(BEER_BONUS * beer.n * 100)}%`);
+  updateBeerUI();
+}
+$('beer').addEventListener('click', drink);
+
+function updateBeerUI() {
+  $('beerN').textContent = beer.n ? `×${beer.n}` : '';
+  $('beerT').style.width = beer.n ? `${(beer.t / BEER_TIME) * 100}%` : '0%';
+  $('beer').classList.toggle('on', beer.n > 0);
+  $('pbeer').textContent = beer.n ? `🍺+${Math.round(BEER_BONUS * beer.n * 100)}%` : '';
 }
 let settleWait = 0;
 
@@ -877,6 +971,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  sizeDrunk();
 });
 
 // старт: меню поверх вращающегося стола
@@ -884,5 +979,5 @@ setupBalls();
 head.root.position.set(borya.x, R, borya.z);
 head.rightUp(new THREE.Vector3(-1, 0, 0.6), 0.01);
 showMenu();
-window.__game = { camera, tick, render: () => renderer.render(scene, camera), G, physics, head, newGame, borya, balls, shoot, setPower: (p) => { G.power = p; }, setAim: (a) => { G.aim = a; } };
+window.__game = { camera, tick, render, beer, drink: () => drink(), G, physics, head, newGame, borya, balls, shoot, setPower: (p) => { G.power = p; }, setAim: (a) => { G.aim = a; } };
 frame();
